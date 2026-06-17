@@ -1,5 +1,14 @@
-import { ref, onUnmounted } from 'vue';
-import type { ProjectTask, PersonnelData, TowerCraneData, EnvData, AlarmRecord } from '@/types';
+import { ref, onUnmounted, watch } from 'vue';
+import type {
+  ProjectTask,
+  PersonnelData,
+  TowerCraneData,
+  EnvData,
+  AlarmRecord,
+  StatusType,
+  ThresholdConfig
+} from '@/types';
+import { useThresholdConfig } from './useThresholdConfig';
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
@@ -19,7 +28,91 @@ const formatTime = (date: Date) => {
   return `${h}:${m}:${s}`;
 };
 
+const parseDate = (dateStr: string): number => {
+  if (!dateStr) return 0;
+  return new Date(dateStr).getTime();
+};
+
+const DAY_MS = 86400000;
+
+const computeTaskStatus = (task: ProjectTask, cfg: ThresholdConfig['gantt']): StatusType => {
+  if (task.progress <= 0) return 'normal';
+  const now = Date.now();
+  const planStart = parseDate(task.planStart);
+  const planEnd = parseDate(task.planEnd);
+  const planDuration = Math.max(1, planEnd - planStart);
+  const actualStart = parseDate(task.actualStart) || planStart;
+
+  let expectedProgress: number;
+  if (task.progress >= 100) {
+    const actualEnd = parseDate(task.actualEnd) || now;
+    const actualDuration = actualEnd - actualStart;
+    const lagDays = (actualDuration - planDuration) / DAY_MS;
+    const lagPercent = (lagDays / planDuration) * 100 * DAY_MS;
+    if (lagPercent > cfg.lagDangerPercent) return 'danger';
+    if (lagPercent > cfg.lagWarningPercent) return 'warning';
+    return 'normal';
+  } else {
+    const elapsed = now - planStart;
+    expectedProgress = Math.max(0, Math.min(100, (elapsed / planDuration) * 100));
+    const lagPercent = expectedProgress - task.progress;
+    if (lagPercent > cfg.lagDangerPercent) return 'danger';
+    if (lagPercent > cfg.lagWarningPercent) return 'warning';
+    return 'normal';
+  }
+};
+
+const computeCraneStatus = (
+  tc: TowerCraneData,
+  cfg: ThresholdConfig['crane']
+): { status: StatusType; newAlarms: AlarmRecord[] } => {
+  const loadRatio = tc.load / tc.maxLoad;
+  const windRatio = tc.windSpeed / tc.maxWindSpeed;
+
+  let status: StatusType = 'normal';
+  const newAlarms: AlarmRecord[] = [...tc.alarms];
+  const nowStr = formatTime(new Date()).slice(0, 8);
+
+  if (windRatio > cfg.wind.dangerRatio || loadRatio > cfg.load.dangerRatio) {
+    status = 'danger';
+    if (windRatio > cfg.wind.dangerRatio) {
+      const last = newAlarms[newAlarms.length - 1];
+      if (!last || last.type !== '风速超限' || last.level !== 'danger') {
+        newAlarms.push({
+          id: generateId(),
+          time: nowStr,
+          type: '风速超限',
+          level: 'danger',
+          message: `${tc.name}-风速${tc.windSpeed.toFixed(1)}m/s超过限值${tc.maxWindSpeed}m/s`,
+          hasPhoto: true
+        });
+      }
+    }
+  } else if (windRatio > cfg.wind.warningRatio || loadRatio > cfg.load.warningRatio) {
+    status = 'warning';
+    if (loadRatio > cfg.load.warningRatio) {
+      const last = newAlarms[newAlarms.length - 1];
+      if (!last || last.type !== '吊重预警' || last.level !== 'warning') {
+        newAlarms.push({
+          id: generateId(),
+          time: nowStr,
+          type: '吊重预警',
+          level: 'warning',
+          message: `${tc.name}-吊重接近额定值${Math.round(loadRatio * 100)}%`,
+          hasPhoto: false
+        });
+      }
+    }
+  }
+
+  while (newAlarms.length > 5) newAlarms.shift();
+
+  return { status, newAlarms };
+};
+
 export function useMockData() {
+  const { config } = useThresholdConfig();
+
   const baseDate = new Date();
   baseDate.setDate(baseDate.getDate() - 30);
 
@@ -27,29 +120,29 @@ export function useMockData() {
     {
       id: '1',
       name: '地基基础工程',
-      planStart: formatDate(new Date(baseDate.getTime() + 0 * 86400000)),
-      planEnd: formatDate(new Date(baseDate.getTime() + 20 * 86400000)),
-      actualStart: formatDate(new Date(baseDate.getTime() + 1 * 86400000)),
-      actualEnd: formatDate(new Date(baseDate.getTime() + 22 * 86400000)),
+      planStart: formatDate(new Date(baseDate.getTime() + 0 * DAY_MS)),
+      planEnd: formatDate(new Date(baseDate.getTime() + 20 * DAY_MS)),
+      actualStart: formatDate(new Date(baseDate.getTime() + 1 * DAY_MS)),
+      actualEnd: formatDate(new Date(baseDate.getTime() + 22 * DAY_MS)),
       progress: 100,
-      status: 'warning'
+      status: 'normal'
     },
     {
       id: '2',
       name: '主体结构工程',
-      planStart: formatDate(new Date(baseDate.getTime() + 15 * 86400000)),
-      planEnd: formatDate(new Date(baseDate.getTime() + 60 * 86400000)),
-      actualStart: formatDate(new Date(baseDate.getTime() + 18 * 86400000)),
-      actualEnd: formatDate(new Date(baseDate.getTime() + 65 * 86400000)),
+      planStart: formatDate(new Date(baseDate.getTime() + 15 * DAY_MS)),
+      planEnd: formatDate(new Date(baseDate.getTime() + 60 * DAY_MS)),
+      actualStart: formatDate(new Date(baseDate.getTime() + 18 * DAY_MS)),
+      actualEnd: formatDate(new Date(baseDate.getTime() + 65 * DAY_MS)),
       progress: 68,
-      status: 'warning'
+      status: 'normal'
     },
     {
       id: '3',
       name: '砌体工程',
-      planStart: formatDate(new Date(baseDate.getTime() + 45 * 86400000)),
-      planEnd: formatDate(new Date(baseDate.getTime() + 75 * 86400000)),
-      actualStart: formatDate(new Date(baseDate.getTime() + 48 * 86400000)),
+      planStart: formatDate(new Date(baseDate.getTime() + 45 * DAY_MS)),
+      planEnd: formatDate(new Date(baseDate.getTime() + 75 * DAY_MS)),
+      actualStart: formatDate(new Date(baseDate.getTime() + 48 * DAY_MS)),
       actualEnd: '',
       progress: 45,
       status: 'normal'
@@ -57,8 +150,8 @@ export function useMockData() {
     {
       id: '4',
       name: '装饰装修工程',
-      planStart: formatDate(new Date(baseDate.getTime() + 70 * 86400000)),
-      planEnd: formatDate(new Date(baseDate.getTime() + 100 * 86400000)),
+      planStart: formatDate(new Date(baseDate.getTime() + 70 * DAY_MS)),
+      planEnd: formatDate(new Date(baseDate.getTime() + 100 * DAY_MS)),
       actualStart: '',
       actualEnd: '',
       progress: 0,
@@ -67,19 +160,19 @@ export function useMockData() {
     {
       id: '5',
       name: '屋面工程',
-      planStart: formatDate(new Date(baseDate.getTime() + 65 * 86400000)),
-      planEnd: formatDate(new Date(baseDate.getTime() + 80 * 86400000)),
-      actualStart: formatDate(new Date(baseDate.getTime() + 68 * 86400000)),
+      planStart: formatDate(new Date(baseDate.getTime() + 65 * DAY_MS)),
+      planEnd: formatDate(new Date(baseDate.getTime() + 80 * DAY_MS)),
+      actualStart: formatDate(new Date(baseDate.getTime() + 68 * DAY_MS)),
       actualEnd: '',
       progress: 30,
-      status: 'danger'
+      status: 'normal'
     },
     {
       id: '6',
       name: '给排水工程',
-      planStart: formatDate(new Date(baseDate.getTime() + 50 * 86400000)),
-      planEnd: formatDate(new Date(baseDate.getTime() + 85 * 86400000)),
-      actualStart: formatDate(new Date(baseDate.getTime() + 52 * 86400000)),
+      planStart: formatDate(new Date(baseDate.getTime() + 50 * DAY_MS)),
+      planEnd: formatDate(new Date(baseDate.getTime() + 85 * DAY_MS)),
+      actualStart: formatDate(new Date(baseDate.getTime() + 52 * DAY_MS)),
       actualEnd: '',
       progress: 55,
       status: 'normal'
@@ -87,9 +180,9 @@ export function useMockData() {
     {
       id: '7',
       name: '电气工程',
-      planStart: formatDate(new Date(baseDate.getTime() + 55 * 86400000)),
-      planEnd: formatDate(new Date(baseDate.getTime() + 90 * 86400000)),
-      actualStart: formatDate(new Date(baseDate.getTime() + 58 * 86400000)),
+      planStart: formatDate(new Date(baseDate.getTime() + 55 * DAY_MS)),
+      planEnd: formatDate(new Date(baseDate.getTime() + 90 * DAY_MS)),
+      actualStart: formatDate(new Date(baseDate.getTime() + 58 * DAY_MS)),
       actualEnd: '',
       progress: 40,
       status: 'normal'
@@ -97,8 +190,8 @@ export function useMockData() {
     {
       id: '8',
       name: '室外工程',
-      planStart: formatDate(new Date(baseDate.getTime() + 90 * 86400000)),
-      planEnd: formatDate(new Date(baseDate.getTime() + 110 * 86400000)),
+      planStart: formatDate(new Date(baseDate.getTime() + 90 * DAY_MS)),
+      planEnd: formatDate(new Date(baseDate.getTime() + 110 * DAY_MS)),
       actualStart: '',
       actualEnd: '',
       progress: 0,
@@ -158,17 +251,8 @@ export function useMockData() {
       maxWindSpeed: 12,
       angle: 210,
       height: 52,
-      status: 'warning',
-      alarms: [
-        {
-          id: 'a1',
-          time: '10:32:15',
-          type: '吊重预警',
-          level: 'warning',
-          message: '吊重接近额定值92%',
-          hasPhoto: true
-        }
-      ]
+      status: 'normal',
+      alarms: []
     },
     {
       id: 'tc3',
@@ -179,25 +263,8 @@ export function useMockData() {
       maxWindSpeed: 12,
       angle: 75,
       height: 38,
-      status: 'danger',
-      alarms: [
-        {
-          id: 'a2',
-          time: '10:45:22',
-          type: '风速超限',
-          level: 'danger',
-          message: '风速13.5m/s超过限值12m/s',
-          hasPhoto: true
-        },
-        {
-          id: 'a3',
-          time: '10:46:08',
-          type: '风速超限',
-          level: 'danger',
-          message: '风速持续超标，已自动减速',
-          hasPhoto: false
-        }
-      ]
+      status: 'normal',
+      alarms: []
     }
   ]);
 
@@ -227,17 +294,48 @@ export function useMockData() {
     });
   }
 
+  const recalcAllStatuses = () => {
+    projectTasks.value = projectTasks.value.map((t) => ({
+      ...t,
+      status: computeTaskStatus(t, config.gantt)
+    }));
+    towerCraneData.value = towerCraneData.value.map((tc) => {
+      const { status, newAlarms } = computeCraneStatus(tc, config.crane);
+      return { ...tc, status, alarms: newAlarms };
+    });
+    const sprinklerOn =
+      envData.value.pm25 > config.env.sprinkler.pm25 ||
+      envData.value.pm10 > config.env.sprinkler.pm10;
+    envData.value = { ...envData.value, sprinklerOn };
+  };
+
+  recalcAllStatuses();
+  const unwatchConfig = watch(
+    () => [
+      config.env.pm25,
+      config.env.pm10,
+      config.env.noise,
+      config.env.sprinkler,
+      config.crane,
+      config.gantt
+    ],
+    () => {
+      recalcAllStatuses();
+    },
+    { deep: true }
+  );
+
   let intervalId: number | null = null;
 
   const startSimulation = () => {
     intervalId = window.setInterval(() => {
-      personnelData.value.teams = personnelData.value.teams.map(t => ({
+      personnelData.value.teams = personnelData.value.teams.map((t) => ({
         ...t,
         count: Math.max(20, Math.floor(t.count + randomRange(-3, 3)))
       }));
       personnelData.value.total = personnelData.value.teams.reduce((sum, t) => sum + t.count, 0);
 
-      const rawAreas = personnelData.value.areas.map(a => ({
+      const rawAreas = personnelData.value.areas.map((a) => ({
         ...a,
         value: Math.max(5, Math.floor(a.value + randomRange(-5, 5)))
       }));
@@ -257,45 +355,44 @@ export function useMockData() {
       }
       personnelData.value.areas = rawAreas;
 
-      towerCraneData.value = towerCraneData.value.map(tc => {
+      towerCraneData.value = towerCraneData.value.map((tc) => {
         const newLoad = Math.max(0, Math.min(tc.maxLoad, tc.load + randomRange(-1, 1)));
         const newWind = Math.max(0, tc.windSpeed + randomRange(-0.5, 0.5));
         const newAngle = (tc.angle + randomRange(-5, 5) + 360) % 360;
         const newHeight = Math.max(10, Math.min(80, tc.height + randomRange(-1, 1)));
 
-        let status: 'normal' | 'warning' | 'danger' = 'normal';
-        const loadRatio = newLoad / tc.maxLoad;
-        const windRatio = newWind / tc.maxWindSpeed;
-
-        if (windRatio > 1 || loadRatio > 0.95) {
-          status = 'danger';
-        } else if (windRatio > 0.85 || loadRatio > 0.8) {
-          status = 'warning';
-        }
-
-        return {
+        const updated: TowerCraneData = {
           ...tc,
           load: Number(newLoad.toFixed(1)),
           windSpeed: Number(newWind.toFixed(1)),
           angle: Number(newAngle.toFixed(0)),
           height: Number(newHeight.toFixed(1)),
-          status
+          status: 'normal'
         };
+        const { status, newAlarms } = computeCraneStatus(updated, config.crane);
+        updated.status = status;
+        updated.alarms = newAlarms;
+        return updated;
       });
 
       const newPm25 = Math.max(20, Math.min(150, envData.value.pm25 + randomRange(-8, 8)));
       const newPm10 = Math.max(30, Math.min(200, envData.value.pm10 + randomRange(-10, 10)));
       const newNoise = Math.max(40, Math.min(90, envData.value.noise + randomRange(-3, 3)));
 
-      const sprinklerOn = newPm25 > 75 || newPm10 > 100;
+      const sprinklerOn =
+        newPm25 > config.env.sprinkler.pm25 || newPm10 > config.env.sprinkler.pm10;
 
       envData.value = {
         ...envData.value,
         pm25: Math.floor(newPm25),
         pm10: Math.floor(newPm10),
         noise: Math.floor(newNoise),
-        temperature: Number((envData.value.temperature + randomRange(-0.2, 0.2)).toFixed(1)),
-        humidity: Math.floor(Math.max(30, Math.min(90, envData.value.humidity + randomRange(-1, 1)))),
+        temperature: Number(
+          (envData.value.temperature + randomRange(-0.2, 0.2)).toFixed(1)
+        ),
+        humidity: Math.floor(
+          Math.max(30, Math.min(90, envData.value.humidity + randomRange(-1, 1)))
+        ),
         sprinklerOn
       };
 
@@ -323,6 +420,7 @@ export function useMockData() {
 
   onUnmounted(() => {
     stopSimulation();
+    unwatchConfig();
   });
 
   return {
@@ -343,7 +441,9 @@ export function useCurrentTime() {
   const updateTime = () => {
     const now = new Date();
     currentTime.value = formatTime(now);
-    currentDate.value = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日 星期${'日一二三四五六'[now.getDay()]}`;
+    currentDate.value = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日 星期${
+      '日一二三四五六'[now.getDay()]
+    }`;
   };
 
   const start = () => {

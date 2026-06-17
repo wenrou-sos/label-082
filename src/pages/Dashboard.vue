@@ -1,14 +1,17 @@
 <script setup lang="ts">
-import { onMounted, computed } from 'vue';
+import { onMounted, computed, ref } from 'vue';
 import { useMockData, useCurrentTime } from '@/composables/useMockData';
 import PanelTitle from '@/components/common/PanelTitle.vue';
 import GanttChart from '@/components/charts/GanttChart.vue';
 import PersonnelMap from '@/components/charts/PersonnelMap.vue';
 import TowerCranePanel from '@/components/charts/TowerCranePanel.vue';
 import EnvMonitor from '@/components/charts/EnvMonitor.vue';
+import SettingsPanel from '@/components/common/SettingsPanel.vue';
 
 const { projectTasks, personnelData, towerCraneData, envData, startSimulation } = useMockData();
 const { currentTime, currentDate, start: startTime } = useCurrentTime();
+
+const settingsVisible = ref(false);
 
 const alarmCount = computed(() => {
   return towerCraneData.value.reduce((sum, tc) => sum + tc.alarms.length, 0);
@@ -21,6 +24,9 @@ const dangerCount = computed(() => {
 const warningCount = computed(() => {
   return towerCraneData.value.filter(tc => tc.status === 'warning').length;
 });
+
+const openSettings = () => { settingsVisible.value = true; };
+const closeSettings = () => { settingsVisible.value = false; };
 
 onMounted(() => {
   startTime();
@@ -98,6 +104,13 @@ onMounted(() => {
             <span>{{ warningCount }} 台预警</span>
           </div>
         </div>
+
+        <button class="settings-btn" @click="openSettings" aria-label="阈值设置" title="预警阈值设置">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+        </button>
       </div>
     </header>
     
@@ -142,6 +155,8 @@ onMounted(() => {
         <span>© 2024 智慧工地管控系统 v2.0</span>
       </div>
     </footer>
+
+    <SettingsPanel :visible="settingsVisible" @close="closeSettings" />
   </div>
 </template>
 
@@ -481,5 +496,26 @@ onMounted(() => {
 @keyframes blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
+}
+
+.settings-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: rgba(0, 176, 255, 0.08);
+  border: 1px solid rgba(0, 176, 255, 0.2);
+  color: #00B0FF;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+}
+.settings-btn:hover {
+  background: rgba(0, 176, 255, 0.18);
+  border-color: rgba(0, 176, 255, 0.45);
+  box-shadow: 0 0 16px rgba(0, 176, 255, 0.25);
+  color: #4FC3F7;
+  transform: rotate(35deg);
 }
 </style>

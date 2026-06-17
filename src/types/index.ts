@@ -75,3 +75,33 @@ export interface EnvData {
 }
 
 export type StatusType = 'normal' | 'warning' | 'danger';
+
+export interface WarningDangerThreshold {
+  warning: number;
+  danger: number;
+}
+
+export interface RatioThreshold {
+  warningRatio: number;
+  dangerRatio: number;
+}
+
+export interface ThresholdConfig {
+  env: {
+    pm25: WarningDangerThreshold;
+    pm10: WarningDangerThreshold;
+    noise: WarningDangerThreshold;
+    sprinkler: {
+      pm25: number;
+      pm10: number;
+    };
+  };
+  crane: {
+    load: RatioThreshold;
+    wind: RatioThreshold;
+  };
+  gantt: {
+    lagWarningPercent: number;
+    lagDangerPercent: number;
+  };
+}

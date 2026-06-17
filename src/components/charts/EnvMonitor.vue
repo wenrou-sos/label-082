@@ -2,12 +2,14 @@
 import { ref, computed, onMounted, watch, onUnmounted } from 'vue';
 import * as echarts from 'echarts';
 import type { EnvData } from '@/types';
+import { useThresholdConfig } from '@/composables/useThresholdConfig';
 
 interface Props {
   data: EnvData;
 }
 
 const props = defineProps<Props>();
+const { config } = useThresholdConfig();
 
 const trendChartRef = ref<HTMLElement | null>(null);
 let trendChartInstance: echarts.ECharts | null = null;
@@ -18,9 +20,9 @@ const getStatus = (value: number, threshold: { warning: number; danger: number }
   return 'normal';
 };
 
-const pm25Status = computed(() => getStatus(props.data.pm25, { warning: 50, danger: 75 }));
-const pm10Status = computed(() => getStatus(props.data.pm10, { warning: 80, danger: 100 }));
-const noiseStatus = computed(() => getStatus(props.data.noise, { warning: 65, danger: 75 }));
+const pm25Status = computed(() => getStatus(props.data.pm25, config.env.pm25));
+const pm10Status = computed(() => getStatus(props.data.pm10, config.env.pm10));
+const noiseStatus = computed(() => getStatus(props.data.noise, config.env.noise));
 
 const statusColors = {
   normal: '#00E676',
