@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useProjects, useCurrentTime } from '@/composables/useProjects';
 import { usePanelLayout, type PanelKey } from '@/composables/usePanelLayout';
+import { useWeather, type WeatherType } from '@/composables/useWeather';
 import PanelTitle from '@/components/common/PanelTitle.vue';
 import GanttChart from '@/components/charts/GanttChart.vue';
 import PersonnelMap from '@/components/charts/PersonnelMap.vue';
@@ -13,6 +14,13 @@ import SettingsPanel from '@/components/common/SettingsPanel.vue';
 const router = useRouter();
 const { projectList, currentProject, currentProjectId, switchProject, startSimulation } = useProjects();
 const { currentTime, currentDate, start: startTime } = useCurrentTime();
+const {
+  current: weather,
+  suitabilityScore,
+  isSuitable,
+  suitabilityLevel,
+  forceUpdate: forceWeatherUpdate,
+} = useWeather();
 const {
   colLeftRatio,
   leftRowRatio,
@@ -280,8 +288,12 @@ onUnmounted(() => {
       </div>
       
       <div class="header-right">
-        <div class="weather-widget">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <div
+          class="weather-widget"
+          :class="[weather.type, { 'not-suitable': !isSuitable }]"
+          :title="`施工适宜度: ${suitabilityScore}分`"
+        >
+          <svg v-if="weather.type === 'sunny'" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
             <circle cx="12" cy="12" r="5"></circle>
             <line x1="12" y1="1" x2="12" y2="3"></line>
             <line x1="12" y1="21" x2="12" y2="23"></line>
@@ -292,7 +304,31 @@ onUnmounted(() => {
             <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
             <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
           </svg>
-          <span class="weather-text">晴 28°C</span>
+          <svg v-else-if="weather.type === 'cloudy'" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path>
+          </svg>
+          <svg v-else-if="weather.type === 'rainy'" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M16 13v8M16 3a7 7 0 0 0-6.9 6M16 3a7 7 0 0 0-6.9 6a5.5 5.5 0 0 0 .9 11M16 3a7 7 0 0 1-2 6"></path>
+            <line x1="8" y1="19" x2="8" y2="22"></line>
+            <line x1="12" y1="21" x2="12" y2="24"></line>
+            <line x1="16" y1="19" x2="16" y2="22"></line>
+          </svg>
+          <svg v-else-if="weather.type === 'windy'" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M9.59 4.59A2 2 0 1 1 11 8H2"></path>
+            <path d="M17.73 6.27A2.5 2.5 0 1 1 19.5 10.5H2"></path>
+            <path d="M12.5 19a2.5 2.5 0 1 0-2.5-4H2"></path>
+          </svg>
+          <svg v-else-if="weather.type === 'haze'" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <line x1="5.2" y1="6" x2="18.8" y2="6"></line>
+            <line x1="2.5" y1="10" x2="21.5" y2="10"></line>
+            <line x1="4" y1="14" x2="20" y2="14"></line>
+            <line x1="7" y1="18" x2="17" y2="18"></line>
+          </svg>
+          <span class="weather-text">{{ weather.label }} {{ weather.temperature }}°C</span>
+          <span class="suitability-badge" :class="suitabilityLevel">
+            {{ suitabilityScore }}
+          </span>
+          <span v-if="!isSuitable" class="suitability-warning">不宜室外作业</span>
         </div>
         
         <div class="alarm-widget" :class="{ 'has-alarm': alarmCount > 0 }">
@@ -795,12 +831,97 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 14px;
+  padding: 6px 12px 6px 10px;
   background: rgba(255, 152, 0, 0.1);
   border: 1px solid rgba(255, 152, 0, 0.2);
   border-radius: 20px;
   color: #FFB74D;
   font-size: 13px;
+  transition: all 0.3s ease;
+}
+
+.weather-widget.sunny {
+  color: #FFB74D;
+  background: rgba(255, 152, 0, 0.1);
+  border-color: rgba(255, 152, 0, 0.25);
+}
+
+.weather-widget.cloudy {
+  color: #90CAF9;
+  background: rgba(144, 202, 249, 0.08);
+  border-color: rgba(144, 202, 249, 0.25);
+}
+
+.weather-widget.rainy {
+  color: #64B5F6;
+  background: rgba(100, 181, 246, 0.1);
+  border-color: rgba(100, 181, 246, 0.25);
+}
+
+.weather-widget.windy {
+  color: #4DB6AC;
+  background: rgba(77, 182, 172, 0.1);
+  border-color: rgba(77, 182, 172, 0.25);
+}
+
+.weather-widget.haze {
+  color: #BDBDBD;
+  background: rgba(189, 189, 189, 0.1);
+  border-color: rgba(189, 189, 189, 0.25);
+}
+
+.weather-widget.not-suitable {
+  color: #FF8A80;
+  background: rgba(255, 23, 68, 0.12);
+  border-color: rgba(255, 23, 68, 0.4);
+  animation: notSuitablePulse 2s ease-in-out infinite;
+}
+
+@keyframes notSuitablePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 23, 68, 0); }
+  50% { box-shadow: 0 0 12px 2px rgba(255, 23, 68, 0.3); }
+}
+
+.suitability-badge {
+  min-width: 30px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+  font-family: 'Orbitron', 'Noto Sans SC', monospace;
+}
+
+.suitability-badge.excellent {
+  background: rgba(0, 230, 118, 0.2);
+  color: #00E676;
+}
+.suitability-badge.good {
+  background: rgba(0, 176, 255, 0.2);
+  color: #00B0FF;
+}
+.suitability-badge.moderate {
+  background: rgba(255, 214, 0, 0.2);
+  color: #FFD600;
+}
+.suitability-badge.poor {
+  background: rgba(255, 109, 0, 0.2);
+  color: #FF6D00;
+}
+.suitability-badge.dangerous {
+  background: rgba(255, 23, 68, 0.25);
+  color: #FF5252;
+}
+
+.suitability-warning {
+  margin-left: 2px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(255, 23, 68, 0.2);
+  color: #FF5252;
+  letter-spacing: 0.5px;
 }
 
 .alarm-widget {

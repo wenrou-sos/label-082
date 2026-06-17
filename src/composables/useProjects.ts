@@ -13,6 +13,8 @@ import type {
   TimePoint
 } from '@/types';
 import { useThresholdConfig } from './useThresholdConfig';
+import { useWeather } from './useWeather';
+import type { WeatherInfo } from './useWeather';
 
 const PROJECT_STORAGE_KEY = 'smart-site-projects';
 const CURRENT_PROJECT_KEY = 'smart-site-current-project';
@@ -277,6 +279,7 @@ const seedProjects: ProjectInfo[] = [
 
 export function useProjects() {
   const { config } = useThresholdConfig();
+  const { current: weather, stop: stopWeather } = useWeather();
 
   const datasets = reactive<Record<string, ProjectDataset>>({});
   const currentProjectId = ref<string>('');
@@ -433,6 +436,8 @@ export function useProjects() {
     const ds = datasets[id];
     if (!ds) return;
 
+    const w = weather.value;
+
     ds.personnel.teams = ds.personnel.teams.map(t => ({
       ...t,
       count: Math.max(15, Math.floor(t.count + randomRange(-2, 2)))
@@ -460,7 +465,8 @@ export function useProjects() {
 
     ds.towerCranes = ds.towerCranes.map(tc => {
       const newLoad = Number(Math.max(0, Math.min(tc.maxLoad, tc.load + randomRange(-0.8, 0.8))).toFixed(1));
-      const newWind = Number(Math.max(0, tc.windSpeed + randomRange(-0.4, 0.4)).toFixed(1));
+      const baseWind = Math.max(0, tc.windSpeed + randomRange(-0.4, 0.4));
+      const newWind = Number(Math.max(0, Math.min(tc.maxWindSpeed + 5, baseWind + w.windSpeedDelta * 0.3)).toFixed(1));
       const newAngle = Math.floor((tc.angle + randomRange(-4, 4) + 360) % 360);
       const newHeight = Number(Math.max(10, Math.min(80, tc.height + randomRange(-0.5, 0.5))).toFixed(1));
 
@@ -471,14 +477,16 @@ export function useProjects() {
       return updated;
     });
 
-    const newPm25 = Math.max(20, Math.min(150, ds.env.pm25 + randomRange(-6, 6)));
-    const newPm10 = Math.max(30, Math.min(200, ds.env.pm10 + randomRange(-8, 8)));
+    const basePm25 = Math.max(20, Math.min(150, ds.env.pm25 + randomRange(-6, 6)));
+    const basePm10 = Math.max(30, Math.min(200, ds.env.pm10 + randomRange(-8, 8)));
     const newNoise = Math.max(40, Math.min(90, ds.env.noise + randomRange(-2, 2)));
-    ds.env.pm25 = Math.floor(newPm25);
-    ds.env.pm10 = Math.floor(newPm10);
+    const newPm25 = Math.max(5, Math.min(200, Math.floor(basePm25 + w.pm25Delta * 0.25)));
+    const newPm10 = Math.max(10, Math.min(300, Math.floor(basePm10 + w.pm10Delta * 0.25)));
+    ds.env.pm25 = newPm25;
+    ds.env.pm10 = newPm10;
     ds.env.noise = Math.floor(newNoise);
-    ds.env.temperature = Number((ds.env.temperature + randomRange(-0.15, 0.15)).toFixed(1));
-    ds.env.humidity = Math.floor(Math.max(30, Math.min(90, ds.env.humidity + randomRange(-1, 1))));
+    ds.env.temperature = Number(w.temperature.toFixed(1));
+    ds.env.humidity = Math.floor(Math.max(20, Math.min(98, 55 + w.humidityDelta + randomRange(-2, 2))));
     ds.env.sprinklerOn = newPm25 > config.env.sprinkler.pm25 || newPm10 > config.env.sprinkler.pm10;
 
     const now = new Date();
@@ -542,9 +550,24 @@ export function useProjects() {
     { deep: true }
   );
 
+  const applyWeatherToAllProjects = () => {
+    Object.keys(datasets).forEach(id => tickProject(id));
+    saveToStorage();
+  };
+
+  const unwatchWeather = watch(
+    weather,
+    () => {
+      applyWeatherToAllProjects();
+    },
+    { deep: true }
+  );
+
   onUnmounted(() => {
     stopSimulation();
+    stopWeather();
     unwatchConfig();
+    unwatchWeather();
   });
 
   return {
