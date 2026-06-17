@@ -2,12 +2,14 @@
 import { ref, computed, onMounted, watch, nextTick, onUnmounted } from 'vue';
 import * as echarts from 'echarts';
 import type { TowerCraneData } from '@/types';
+import { useThresholdConfig } from '@/composables/useThresholdConfig';
 
 interface Props {
   data: TowerCraneData[];
 }
 
 const props = defineProps<Props>();
+const { config } = useThresholdConfig();
 
 const gaugeRefs = ref<Record<string, HTMLElement | null>>({});
 const gaugeInstances = ref<Record<string, echarts.ECharts | null>>({});
@@ -17,6 +19,18 @@ const statusColors = {
   normal: '#00E676',
   warning: '#FFD600',
   danger: '#FF1744'
+};
+
+const computeParamStatus = (
+  value: number,
+  max: number,
+  warningRatio: number,
+  dangerRatio: number
+): 'normal' | 'warning' | 'danger' => {
+  const ratio = value / max;
+  if (ratio > dangerRatio) return 'danger';
+  if (ratio > warningRatio) return 'warning';
+  return 'normal';
 };
 
 const createGaugeOption = (
@@ -129,33 +143,35 @@ const updateGauges = () => {
     const loadKey = `${crane.id}-load`;
     const windKey = `${crane.id}-wind`;
     const angleKey = `${crane.id}-angle`;
-    
-    const loadStatus = crane.load / crane.maxLoad > 0.95 
-      ? 'danger' 
-      : crane.load / crane.maxLoad > 0.8 
-        ? 'warning' 
-        : 'normal';
-    
+
+    const loadStatus = computeParamStatus(
+      crane.load,
+      crane.maxLoad,
+      config.crane.load.warningRatio,
+      config.crane.load.dangerRatio
+    );
+
     if (gaugeInstances.value[loadKey]) {
       gaugeInstances.value[loadKey]?.setOption(
         createGaugeOption(crane.load, crane.maxLoad, 't', loadStatus),
         true
       );
     }
-    
-    const windStatus = crane.windSpeed / crane.maxWindSpeed > 1 
-      ? 'danger' 
-      : crane.windSpeed / crane.maxWindSpeed > 0.85 
-        ? 'warning' 
-        : 'normal';
-    
+
+    const windStatus = computeParamStatus(
+      crane.windSpeed,
+      crane.maxWindSpeed,
+      config.crane.wind.warningRatio,
+      config.crane.wind.dangerRatio
+    );
+
     if (gaugeInstances.value[windKey]) {
       gaugeInstances.value[windKey]?.setOption(
         createGaugeOption(crane.windSpeed, crane.maxWindSpeed, 'm/s', windStatus),
         true
       );
     }
-    
+
     if (gaugeInstances.value[angleKey]) {
       gaugeInstances.value[angleKey]?.setOption(
         createGaugeOption(crane.angle, 360, '°', 'normal'),
@@ -170,6 +186,16 @@ watch(() => props.data, () => {
     updateGauges();
   }
 }, { deep: true });
+
+watch(
+  () => [config.crane.load.warningRatio, config.crane.load.dangerRatio, config.crane.wind.warningRatio, config.crane.wind.dangerRatio],
+  () => {
+    if (isInitialized.value) {
+      updateGauges();
+    }
+  },
+  { deep: true }
+);
 
 const allAlarms = computed(() => {
   return props.data.flatMap(crane => 
