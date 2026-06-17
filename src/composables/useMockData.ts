@@ -106,24 +106,35 @@ export function useMockData() {
     }
   ]);
 
+  const initialTeams = [
+    { team: '钢筋班', count: 45, area: '二标段', color: '#00B0FF' },
+    { team: '木工班', count: 38, area: '一标段', color: '#00E676' },
+    { team: '瓦工班', count: 52, area: '三标段', color: '#FFD600' },
+    { team: '架子班', count: 28, area: '二标段', color: '#FF6D00' },
+    { team: '水电班', count: 23, area: '一标段', color: '#AA00FF' }
+  ];
+  const initialTotal = initialTeams.reduce((s, t) => s + t.count, 0);
+  const initialAreaRatios = [0.35, 0.40, 0.17, 0.05, 0.03];
+
   const personnelData = ref<PersonnelData>({
-    total: 186,
-    teams: [
-      { team: '钢筋班', count: 45, area: '二标段', color: '#00B0FF' },
-      { team: '木工班', count: 38, area: '一标段', color: '#00E676' },
-      { team: '瓦工班', count: 52, area: '三标段', color: '#FFD600' },
-      { team: '架子班', count: 28, area: '二标段', color: '#FF6D00' },
-      { team: '水电班', count: 23, area: '一标段', color: '#AA00FF' }
-    ],
+    total: initialTotal,
+    teams: initialTeams,
     areas: [
-      { name: '一标段', value: 68, x: 150, y: 200 },
-      { name: '二标段', value: 82, x: 400, y: 150 },
-      { name: '三标段', value: 56, x: 600, y: 220 },
-      { name: '办公区', value: 12, x: 100, y: 350 },
-      { name: '材料区', value: 8, x: 680, y: 350 }
+      { name: '一标段', value: Math.round(initialTotal * initialAreaRatios[0]), x: 150, y: 200 },
+      { name: '二标段', value: Math.round(initialTotal * initialAreaRatios[1]), x: 400, y: 150 },
+      { name: '三标段', value: Math.round(initialTotal * initialAreaRatios[2]), x: 600, y: 220 },
+      { name: '办公区', value: Math.round(initialTotal * initialAreaRatios[3]), x: 100, y: 350 },
+      { name: '材料区', value: Math.round(initialTotal * initialAreaRatios[4]), x: 680, y: 350 }
     ],
     trend: []
   });
+  {
+    const areaSum = personnelData.value.areas.reduce((s, a) => s + a.value, 0);
+    const diff = initialTotal - areaSum;
+    if (diff !== 0) {
+      personnelData.value.areas[0].value += diff;
+    }
+  }
 
   const towerCraneData = ref<TowerCraneData[]>([
     {
@@ -225,10 +236,26 @@ export function useMockData() {
         count: Math.max(20, Math.floor(t.count + randomRange(-3, 3)))
       }));
       personnelData.value.total = personnelData.value.teams.reduce((sum, t) => sum + t.count, 0);
-      personnelData.value.areas = personnelData.value.areas.map(a => ({
+
+      const rawAreas = personnelData.value.areas.map(a => ({
         ...a,
         value: Math.max(5, Math.floor(a.value + randomRange(-5, 5)))
       }));
+      const rawAreaSum = rawAreas.reduce((s, a) => s + a.value, 0);
+      const targetTotal = personnelData.value.total;
+      if (rawAreaSum > 0) {
+        let accumulated = 0;
+        for (let i = 0; i < rawAreas.length; i++) {
+          if (i < rawAreas.length - 1) {
+            const v = Math.round((rawAreas[i].value / rawAreaSum) * targetTotal);
+            rawAreas[i].value = Math.max(1, v);
+            accumulated += rawAreas[i].value;
+          } else {
+            rawAreas[i].value = Math.max(1, targetTotal - accumulated);
+          }
+        }
+      }
+      personnelData.value.areas = rawAreas;
 
       towerCraneData.value = towerCraneData.value.map(tc => {
         const newLoad = Math.max(0, Math.min(tc.maxLoad, tc.load + randomRange(-1, 1)));
@@ -274,10 +301,11 @@ export function useMockData() {
 
       const now = new Date();
       const lastTrend = envData.value.trend[envData.value.trend.length - 1];
-      if (lastTrend && lastTrend.time !== formatTime(now).slice(0, 5) + ':00') {
+      const currentHourStr = `${String(now.getHours()).padStart(2, '0')}:00`;
+      if (lastTrend && lastTrend.time !== currentHourStr) {
         envData.value.trend.shift();
         envData.value.trend.push({
-          time: formatTime(now).slice(0, 5) + ':00',
+          time: currentHourStr,
           pm25: Math.floor(newPm25),
           pm10: Math.floor(newPm10),
           noise: Math.floor(newNoise)

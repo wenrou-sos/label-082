@@ -58,10 +58,18 @@ const chartOption = computed(() => {
         itemStyle: { color: 'transparent' }
       };
     }
-    
-    const planDuration = parseDate(t.planEnd) - parseDate(t.planStart);
-    const actualEnd = start + planDuration * (t.progress / 100);
-    
+
+    let actualEnd: number;
+    const hasActualEnd = t.actualEnd && parseDate(t.actualEnd) > 0;
+    const isCompleted = t.progress >= 100;
+
+    if (isCompleted && hasActualEnd) {
+      actualEnd = parseDate(t.actualEnd);
+    } else {
+      const planDuration = parseDate(t.planEnd) - parseDate(t.planStart);
+      actualEnd = start + planDuration * (t.progress / 100);
+    }
+
     return {
       value: [start, actualEnd, index],
       itemStyle: {
