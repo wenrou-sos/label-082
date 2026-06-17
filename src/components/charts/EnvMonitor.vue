@@ -13,6 +13,8 @@ const { config } = useThresholdConfig();
 
 const trendChartRef = ref<HTMLElement | null>(null);
 let trendChartInstance: echarts.ECharts | null = null;
+let resizeObserver: ResizeObserver | null = null;
+let rafId: number | null = null;
 
 const getStatus = (value: number, threshold: { warning: number; danger: number }) => {
   if (value >= threshold.danger) return 'danger';
@@ -217,7 +219,13 @@ watch(() => props.data.trend, () => {
 }, { deep: true });
 
 const handleResize = () => {
-  trendChartInstance?.resize();
+  if (rafId !== null) return;
+  rafId = requestAnimationFrame(() => {
+    rafId = null;
+    if (trendChartInstance && trendChartRef.value && trendChartRef.value.clientWidth > 0 && trendChartRef.value.clientHeight > 0) {
+      trendChartInstance.resize();
+    }
+  });
 };
 
 onMounted(() => {
@@ -225,10 +233,23 @@ onMounted(() => {
     initChart();
   }, 50);
   window.addEventListener('resize', handleResize);
+  if (trendChartRef.value) {
+    resizeObserver = new ResizeObserver(handleResize);
+    resizeObserver.observe(trendChartRef.value);
+  }
 });
 
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize);
+  if (resizeObserver && trendChartRef.value) {
+    resizeObserver.unobserve(trendChartRef.value);
+    resizeObserver.disconnect();
+    resizeObserver = null;
+  }
+  if (rafId !== null) {
+    cancelAnimationFrame(rafId);
+    rafId = null;
+  }
   trendChartInstance?.dispose();
   trendChartInstance = null;
 });

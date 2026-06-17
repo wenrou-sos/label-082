@@ -237,16 +237,33 @@ const allAlarms = computed(() => {
 });
 
 const handleResize = () => {
-  Object.values(gaugeInstances.value).forEach(instance => {
-    instance?.resize();
+  if (rafId !== null) return;
+  rafId = requestAnimationFrame(() => {
+    rafId = null;
+    Object.values(gaugeInstances.value).forEach(instance => {
+      instance?.resize();
+    });
   });
 };
 
 let resizeObserver: ResizeObserver | null = null;
+let rafId: number | null = null;
+
+const setupResizeObserver = () => {
+  if (resizeObserver) {
+    resizeObserver.disconnect();
+  }
+  const panelEl = document.querySelector('.tower-crane-panel');
+  if (panelEl) {
+    resizeObserver = new ResizeObserver(handleResize);
+    resizeObserver.observe(panelEl);
+  }
+};
 
 onMounted(() => {
   setTimeout(() => {
     initGauges();
+    setupResizeObserver();
   }, 100);
   
   window.addEventListener('resize', handleResize);
@@ -256,6 +273,11 @@ onUnmounted(() => {
   window.removeEventListener('resize', handleResize);
   if (resizeObserver) {
     resizeObserver.disconnect();
+    resizeObserver = null;
+  }
+  if (rafId !== null) {
+    cancelAnimationFrame(rafId);
+    rafId = null;
   }
   Object.values(gaugeInstances.value).forEach(instance => {
     instance?.dispose();

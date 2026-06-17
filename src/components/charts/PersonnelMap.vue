@@ -13,6 +13,8 @@ const mapChartRef = ref<HTMLElement | null>(null);
 const barChartRef = ref<HTMLElement | null>(null);
 let mapChartInstance: echarts.ECharts | null = null;
 let barChartInstance: echarts.ECharts | null = null;
+let resizeObserver: ResizeObserver | null = null;
+let rafId: number | null = null;
 
 const teamColors: Record<string, string> = {
   '钢筋班': '#00B0FF',
@@ -217,6 +219,19 @@ const barOption = computed(() => {
 
 let resizeHandler: (() => void) | null = null;
 
+const handleResize = () => {
+  if (rafId !== null) return;
+  rafId = requestAnimationFrame(() => {
+    rafId = null;
+    if (mapChartInstance && mapChartRef.value && mapChartRef.value.clientWidth > 0 && mapChartRef.value.clientHeight > 0) {
+      mapChartInstance.resize();
+    }
+    if (barChartInstance && barChartRef.value && barChartRef.value.clientWidth > 0 && barChartRef.value.clientHeight > 0) {
+      barChartInstance.resize();
+    }
+  });
+};
+
 const initCharts = () => {
   if (!mapChartRef.value || !barChartRef.value) return;
   if (mapChartRef.value.clientWidth === 0 || barChartRef.value.clientWidth === 0) {
@@ -230,11 +245,12 @@ const initCharts = () => {
   barChartInstance = echarts.init(barChartRef.value);
   barChartInstance.setOption(barOption.value);
 
-  resizeHandler = () => {
-    mapChartInstance?.resize();
-    barChartInstance?.resize();
-  };
+  resizeHandler = handleResize;
   window.addEventListener('resize', resizeHandler);
+
+  resizeObserver = new ResizeObserver(handleResize);
+  resizeObserver.observe(mapChartRef.value);
+  resizeObserver.observe(barChartRef.value);
 };
 
 watch(() => props.data, () => {
@@ -255,6 +271,14 @@ onMounted(() => {
 onUnmounted(() => {
   if (resizeHandler) {
     window.removeEventListener('resize', resizeHandler);
+  }
+  if (resizeObserver) {
+    resizeObserver.disconnect();
+    resizeObserver = null;
+  }
+  if (rafId !== null) {
+    cancelAnimationFrame(rafId);
+    rafId = null;
   }
   mapChartInstance?.dispose();
   barChartInstance?.dispose();

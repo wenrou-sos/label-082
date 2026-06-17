@@ -11,6 +11,8 @@ const props = defineProps<Props>();
 
 const chartRef = ref<HTMLElement | null>(null);
 let chartInstance: echarts.ECharts | null = null;
+let resizeObserver: ResizeObserver | null = null;
+let rafId: number | null = null;
 
 const statusColors = {
   normal: '#00E676',
@@ -292,7 +294,13 @@ const initChart = () => {
 };
 
 const handleResize = () => {
-  chartInstance?.resize();
+  if (rafId !== null) return;
+  rafId = requestAnimationFrame(() => {
+    rafId = null;
+    if (chartInstance && chartRef.value && chartRef.value.clientWidth > 0 && chartRef.value.clientHeight > 0) {
+      chartInstance.resize();
+    }
+  });
 };
 
 watch(() => props.tasks, () => {
@@ -304,10 +312,23 @@ watch(() => props.tasks, () => {
 onMounted(() => {
   initChart();
   window.addEventListener('resize', handleResize);
+  if (chartRef.value) {
+    resizeObserver = new ResizeObserver(handleResize);
+    resizeObserver.observe(chartRef.value);
+  }
 });
 
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize);
+  if (resizeObserver && chartRef.value) {
+    resizeObserver.unobserve(chartRef.value);
+    resizeObserver.disconnect();
+    resizeObserver = null;
+  }
+  if (rafId !== null) {
+    cancelAnimationFrame(rafId);
+    rafId = null;
+  }
   chartInstance?.dispose();
   chartInstance = null;
 });
