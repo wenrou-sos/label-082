@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, computed, ref } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useProjects, useCurrentTime } from '@/composables/useProjects';
+import { usePanelLayout, type PanelKey } from '@/composables/usePanelLayout';
 import PanelTitle from '@/components/common/PanelTitle.vue';
 import GanttChart from '@/components/charts/GanttChart.vue';
 import PersonnelMap from '@/components/charts/PersonnelMap.vue';
@@ -12,6 +13,19 @@ import SettingsPanel from '@/components/common/SettingsPanel.vue';
 const router = useRouter();
 const { projectList, currentProject, currentProjectId, switchProject, startSimulation } = useProjects();
 const { currentTime, currentDate, start: startTime } = useCurrentTime();
+const {
+  colLeftRatio,
+  leftRowRatio,
+  rightRowRatio,
+  collapsed,
+  pinned,
+  toggleCollapse,
+  togglePin,
+  setColLeftRatio,
+  setLeftRowRatio,
+  setRightRowRatio,
+  resetLayout
+} = usePanelLayout();
 
 const settingsVisible = ref(false);
 const projectDropdownOpen = ref(false);
@@ -57,6 +71,125 @@ const handleClickOutside = (e: MouseEvent) => {
     projectDropdownOpen.value = false;
   }
 };
+
+// ---------- 拖拽相关 ----------
+const mainGridRef = ref<HTMLElement | null>(null);
+
+let isDraggingCol = false;
+let isDraggingRowLeft = false;
+let isDraggingRowRight = false;
+let dragStartX = 0;
+let dragStartY = 0;
+let dragStartColRatio = 0;
+let dragStartRowLeftRatio = 0;
+let dragStartRowRightRatio = 0;
+
+const startDragCol = (e: MouseEvent) => {
+  e.preventDefault();
+  isDraggingCol = true;
+  dragStartX = e.clientX;
+  dragStartColRatio = colLeftRatio.value;
+  document.body.style.cursor = 'col-resize';
+  document.body.style.userSelect = 'none';
+  window.addEventListener('mousemove', onDragCol);
+  window.addEventListener('mouseup', stopDragCol);
+};
+
+const onDragCol = (e: MouseEvent) => {
+  if (!isDraggingCol || !mainGridRef.value) return;
+  const rect = mainGridRef.value.getBoundingClientRect();
+  const delta = e.clientX - dragStartX;
+  const ratioDelta = delta / rect.width;
+  setColLeftRatio(dragStartColRatio + ratioDelta);
+};
+
+const stopDragCol = () => {
+  isDraggingCol = false;
+  document.body.style.cursor = '';
+  document.body.style.userSelect = '';
+  window.removeEventListener('mousemove', onDragCol);
+  window.removeEventListener('mouseup', stopDragCol);
+};
+
+// 左侧列水平拖拽
+const leftColRef = ref<HTMLElement | null>(null);
+
+const startDragRowLeft = (e: MouseEvent) => {
+  e.preventDefault();
+  isDraggingRowLeft = true;
+  dragStartY = e.clientY;
+  dragStartRowLeftRatio = leftRowRatio.value;
+  document.body.style.cursor = 'row-resize';
+  document.body.style.userSelect = 'none';
+  window.addEventListener('mousemove', onDragRowLeft);
+  window.addEventListener('mouseup', stopDragRowLeft);
+};
+
+const onDragRowLeft = (e: MouseEvent) => {
+  if (!isDraggingRowLeft || !leftColRef.value) return;
+  const rect = leftColRef.value.getBoundingClientRect();
+  const delta = e.clientY - dragStartY;
+  const ratioDelta = delta / rect.height;
+  setLeftRowRatio(dragStartRowLeftRatio + ratioDelta);
+};
+
+const stopDragRowLeft = () => {
+  isDraggingRowLeft = false;
+  document.body.style.cursor = '';
+  document.body.style.userSelect = '';
+  window.removeEventListener('mousemove', onDragRowLeft);
+  window.removeEventListener('mouseup', stopDragRowLeft);
+};
+
+// 右侧列水平拖拽
+const rightColRef = ref<HTMLElement | null>(null);
+
+const startDragRowRight = (e: MouseEvent) => {
+  e.preventDefault();
+  isDraggingRowRight = true;
+  dragStartY = e.clientY;
+  dragStartRowRightRatio = rightRowRatio.value;
+  document.body.style.cursor = 'row-resize';
+  document.body.style.userSelect = 'none';
+  window.addEventListener('mousemove', onDragRowRight);
+  window.addEventListener('mouseup', stopDragRowRight);
+};
+
+const onDragRowRight = (e: MouseEvent) => {
+  if (!isDraggingRowRight || !rightColRef.value) return;
+  const rect = rightColRef.value.getBoundingClientRect();
+  const delta = e.clientY - dragStartY;
+  const ratioDelta = delta / rect.height;
+  setRightRowRatio(dragStartRowRightRatio + ratioDelta);
+};
+
+const stopDragRowRight = () => {
+  isDraggingRowRight = false;
+  document.body.style.cursor = '';
+  document.body.style.userSelect = '';
+  window.removeEventListener('mousemove', onDragRowRight);
+  window.removeEventListener('mouseup', stopDragRowRight);
+};
+
+// 面板折叠状态
+const isCollapsed = (key: PanelKey) => collapsed.value[key];
+
+const handleToggleCollapse = (key: PanelKey) => {
+  toggleCollapse(key);
+  setTimeout(() => {
+    window.dispatchEvent(new Event('resize'));
+  }, 50);
+};
+
+const handleTogglePin = (key: PanelKey) => {
+  togglePin(key);
+  setTimeout(() => {
+    window.dispatchEvent(new Event('resize'));
+  }, 100);
+};
+
+// 置顶面板样式
+const pinnedPanel = computed(() => pinned.value);
 
 onMounted(() => {
   startTime();
@@ -188,36 +321,157 @@ onUnmounted(() => {
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
           </svg>
         </button>
+
+        <button class="reset-layout-btn" @click="resetLayout" title="重置布局">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="1 4 1 10 7 10"></polyline>
+            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+          </svg>
+        </button>
       </div>
     </header>
     
     <main class="dashboard-main">
-      <div class="main-grid">
-        <div class="panel panel-gantt">
-          <PanelTitle title="项目进度甘特图" icon="chart" extra="实时更新" />
-          <div class="panel-content">
-            <GanttChart :tasks="projectTasks" />
+      <!-- 置顶面板模式 -->
+      <div v-if="pinnedPanel" class="pinned-panel">
+        <div class="panel panel-full" :class="`panel-${pinnedPanel}`">
+          <PanelTitle
+            :title="pinnedPanel === 'gantt' ? '项目进度甘特图' : pinnedPanel === 'personnel' ? '施工人员定位' : pinnedPanel === 'crane' ? '重大危险源监控' : '环境监测'"
+            :extra="pinnedPanel === 'gantt' ? '实时更新' : pinnedPanel === 'personnel' ? '今日出勤' : pinnedPanel === 'crane' ? '塔吊监测' : '实时数据'"
+            :collapsible="true"
+            :collapsed="isCollapsed(pinnedPanel)"
+            :pinnable="true"
+            :pinned="true"
+            @toggle-collapse="handleToggleCollapse(pinnedPanel)"
+            @toggle-pin="handleTogglePin(pinnedPanel)"
+          />
+          <div v-show="!isCollapsed(pinnedPanel)" class="panel-content">
+            <GanttChart v-if="pinnedPanel === 'gantt'" :tasks="projectTasks" />
+            <PersonnelMap v-else-if="pinnedPanel === 'personnel'" :data="personnelData" />
+            <TowerCranePanel v-else-if="pinnedPanel === 'crane'" :data="towerCraneData" />
+            <EnvMonitor v-else-if="pinnedPanel === 'env'" :data="envData" />
           </div>
         </div>
-        
-        <div class="panel panel-personnel">
-          <PanelTitle title="施工人员定位" icon="users" extra="今日出勤" />
-          <div class="panel-content">
-            <PersonnelMap :data="personnelData" />
+      </div>
+
+      <!-- 正常四宫格布局 -->
+      <div v-else ref="mainGridRef" class="main-grid">
+        <!-- 左列 -->
+        <div ref="leftColRef" class="grid-col left-col" :style="{ flex: `${colLeftRatio * 100} 1 0%` }">
+          <!-- 上：甘特图 -->
+          <div
+            class="panel panel-gantt panel-item"
+            :class="{ collapsed: isCollapsed('gantt') }"
+            :style="{ flex: isCollapsed('gantt') ? '0 0 auto' : `${leftRowRatio * 100} 1 0%` }"
+          >
+            <PanelTitle
+              title="项目进度甘特图"
+              icon="chart"
+              extra="实时更新"
+              :collapsible="true"
+              :collapsed="isCollapsed('gantt')"
+              :pinnable="true"
+              :pinned="false"
+              @toggle-collapse="handleToggleCollapse('gantt')"
+              @toggle-pin="handleTogglePin('gantt')"
+            />
+            <div v-show="!isCollapsed('gantt')" class="panel-content">
+              <GanttChart :tasks="projectTasks" />
+            </div>
+          </div>
+
+          <!-- 水平拖拽条（左列） -->
+          <div
+            v-if="!isCollapsed('gantt') && !isCollapsed('crane')"
+            class="drag-handle drag-handle-row"
+            @mousedown="startDragRowLeft"
+            title="上下拖拽调整高度"
+          >
+            <span class="drag-dots"></span>
+          </div>
+
+          <!-- 下：塔吊 -->
+          <div
+            class="panel panel-crane panel-item"
+            :class="{ collapsed: isCollapsed('crane') }"
+            :style="{ flex: isCollapsed('crane') ? '0 0 auto' : `${(1 - leftRowRatio) * 100} 1 0%` }"
+          >
+            <PanelTitle
+              title="重大危险源监控"
+              icon="alert-triangle"
+              extra="塔吊监测"
+              :collapsible="true"
+              :collapsed="isCollapsed('crane')"
+              :pinnable="true"
+              :pinned="false"
+              @toggle-collapse="handleToggleCollapse('crane')"
+              @toggle-pin="handleTogglePin('crane')"
+            />
+            <div v-show="!isCollapsed('crane')" class="panel-content">
+              <TowerCranePanel :data="towerCraneData" />
+            </div>
           </div>
         </div>
-        
-        <div class="panel panel-crane">
-          <PanelTitle title="重大危险源监控" icon="alert-triangle" extra="塔吊监测" />
-          <div class="panel-content">
-            <TowerCranePanel :data="towerCraneData" />
-          </div>
+
+        <!-- 垂直拖拽条 -->
+        <div class="drag-handle drag-handle-col" @mousedown="startDragCol" title="左右拖拽调整宽度">
+          <span class="drag-dots"></span>
         </div>
-        
-        <div class="panel panel-env">
-          <PanelTitle title="环境监测" icon="cloud" extra="实时数据" />
-          <div class="panel-content">
-            <EnvMonitor :data="envData" />
+
+        <!-- 右列 -->
+        <div ref="rightColRef" class="grid-col right-col" :style="{ flex: `${(1 - colLeftRatio) * 100} 1 0%` }">
+          <!-- 上：人员 -->
+          <div
+            class="panel panel-personnel panel-item"
+            :class="{ collapsed: isCollapsed('personnel') }"
+            :style="{ flex: isCollapsed('personnel') ? '0 0 auto' : `${rightRowRatio * 100} 1 0%` }"
+          >
+            <PanelTitle
+              title="施工人员定位"
+              icon="users"
+              extra="今日出勤"
+              :collapsible="true"
+              :collapsed="isCollapsed('personnel')"
+              :pinnable="true"
+              :pinned="false"
+              @toggle-collapse="handleToggleCollapse('personnel')"
+              @toggle-pin="handleTogglePin('personnel')"
+            />
+            <div v-show="!isCollapsed('personnel')" class="panel-content">
+              <PersonnelMap :data="personnelData" />
+            </div>
+          </div>
+
+          <!-- 水平拖拽条（右列） -->
+          <div
+            v-if="!isCollapsed('personnel') && !isCollapsed('env')"
+            class="drag-handle drag-handle-row"
+            @mousedown="startDragRowRight"
+            title="上下拖拽调整高度"
+          >
+            <span class="drag-dots"></span>
+          </div>
+
+          <!-- 下：环境 -->
+          <div
+            class="panel panel-env panel-item"
+            :class="{ collapsed: isCollapsed('env') }"
+            :style="{ flex: isCollapsed('env') ? '0 0 auto' : `${(1 - rightRowRatio) * 100} 1 0%` }"
+          >
+            <PanelTitle
+              title="环境监测"
+              icon="cloud"
+              extra="实时数据"
+              :collapsible="true"
+              :collapsed="isCollapsed('env')"
+              :pinnable="true"
+              :pinned="false"
+              @toggle-collapse="handleToggleCollapse('env')"
+              @toggle-pin="handleTogglePin('env')"
+            />
+            <div v-show="!isCollapsed('env')" class="panel-content">
+              <EnvMonitor :data="envData" />
+            </div>
           </div>
         </div>
       </div>
@@ -302,6 +556,7 @@ onUnmounted(() => {
   height: 64px;
   background: linear-gradient(180deg, rgba(0, 176, 255, 0.1) 0%, transparent 100%);
   border-bottom: 1px solid rgba(0, 176, 255, 0.15);
+  flex-shrink: 0;
 }
 
 .header-left {
@@ -629,20 +884,141 @@ onUnmounted(() => {
   box-shadow: 0 0 8px #FFD600;
 }
 
+.settings-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: rgba(0, 176, 255, 0.08);
+  border: 1px solid rgba(0, 176, 255, 0.2);
+  color: #00B0FF;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+}
+.settings-btn:hover {
+  background: rgba(0, 176, 255, 0.18);
+  border-color: rgba(0, 176, 255, 0.45);
+  box-shadow: 0 0 16px rgba(0, 176, 255, 0.25);
+  color: #4FC3F7;
+  transform: rotate(35deg);
+}
+
+.reset-layout-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: rgba(120, 144, 156, 0.08);
+  border: 1px solid rgba(120, 144, 156, 0.2);
+  color: #78909C;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+.reset-layout-btn:hover {
+  color: #00B0FF;
+  border-color: rgba(0, 176, 255, 0.4);
+  background: rgba(0, 176, 255, 0.1);
+}
+
 .dashboard-main {
   flex: 1;
   position: relative;
   z-index: 5;
   padding: 16px;
   overflow: hidden;
+  min-height: 0;
 }
 
+/* ---------- 主网格布局 ---------- */
 .main-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr 1fr;
-  gap: 16px;
+  display: flex;
+  flex-direction: row;
+  gap: 0;
   height: 100%;
+  width: 100%;
+  position: relative;
+}
+
+.grid-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* ---------- 拖拽手柄 ---------- */
+.drag-handle {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  z-index: 10;
+  transition: background 0.2s ease;
+}
+
+.drag-handle-col {
+  width: 12px;
+  cursor: col-resize;
+  margin: 0 -4px;
+}
+
+.drag-handle-row {
+  height: 12px;
+  cursor: row-resize;
+  margin: -4px 0;
+}
+
+.drag-handle:hover {
+  background: rgba(0, 176, 255, 0.1);
+}
+
+.drag-dots {
+  position: relative;
+  display: block;
+}
+
+.drag-handle-col .drag-dots {
+  width: 4px;
+  height: 40px;
+  background: 
+    radial-gradient(circle, rgba(0, 176, 255, 0.3) 1px, transparent 1px);
+  background-size: 4px 8px;
+  border-radius: 2px;
+}
+
+.drag-handle-row .drag-dots {
+  width: 40px;
+  height: 4px;
+  background: 
+    radial-gradient(circle, rgba(0, 176, 255, 0.3) 1px, transparent 1px);
+  background-size: 8px 4px;
+  border-radius: 2px;
+}
+
+.drag-handle:hover .drag-dots {
+  background: 
+    radial-gradient(circle, rgba(0, 176, 255, 0.6) 1px, transparent 1px);
+  background-size: 4px 8px;
+}
+
+.drag-handle-row:hover .drag-dots {
+  background-size: 8px 4px;
+}
+
+/* ---------- 面板通用样式 ---------- */
+.panel-item {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
 }
 
 .panel {
@@ -653,7 +1029,19 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   position: relative;
+  margin: 0;
 }
+
+.panel-gantt { margin-right: 0; }
+.panel-personnel { margin-left: 0; }
+.panel-crane { margin-right: 0; }
+.panel-env { margin-left: 0; }
+
+.left-col .panel { margin-right: 8px; }
+.right-col .panel { margin-left: 8px; }
+
+.grid-col .panel:first-child { margin-bottom: 0; }
+.grid-col .panel:last-child { margin-top: 0; }
 
 .panel::before {
   content: '';
@@ -666,6 +1054,7 @@ onUnmounted(() => {
   border-left: 2px solid #00B0FF;
   border-top-left-radius: 10px;
   pointer-events: none;
+  z-index: 1;
 }
 
 .panel::after {
@@ -679,31 +1068,35 @@ onUnmounted(() => {
   border-right: 2px solid #00B0FF;
   border-bottom-right-radius: 10px;
   pointer-events: none;
+  z-index: 1;
 }
 
-.panel-gantt {
-  grid-column: 1 / 2;
-  grid-row: 1 / 2;
+.panel.collapsed {
+  flex: 0 0 auto !important;
 }
 
-.panel-personnel {
-  grid-column: 2 / 3;
-  grid-row: 1 / 2;
-}
-
-.panel-crane {
-  grid-column: 1 / 2;
-  grid-row: 2 / 3;
-}
-
-.panel-env {
-  grid-column: 2 / 3;
-  grid-row: 2 / 3;
+.panel.collapsed .panel-content {
+  display: none;
 }
 
 .panel-content {
   flex: 1;
   overflow: hidden;
+  min-height: 0;
+}
+
+/* ---------- 置顶面板 ---------- */
+.pinned-panel {
+  height: 100%;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.panel-full {
+  flex: 1;
+  height: 100%;
+  width: 100%;
 }
 
 .dashboard-footer {
@@ -717,6 +1110,7 @@ onUnmounted(() => {
   background: rgba(10, 22, 40, 0.8);
   font-size: 12px;
   color: #546E7A;
+  flex-shrink: 0;
 }
 
 .footer-left {
@@ -737,26 +1131,5 @@ onUnmounted(() => {
 @keyframes blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
-}
-
-.settings-btn {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  background: rgba(0, 176, 255, 0.08);
-  border: 1px solid rgba(0, 176, 255, 0.2);
-  color: #00B0FF;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.3s ease;
-}
-.settings-btn:hover {
-  background: rgba(0, 176, 255, 0.18);
-  border-color: rgba(0, 176, 255, 0.45);
-  box-shadow: 0 0 16px rgba(0, 176, 255, 0.25);
-  color: #4FC3F7;
-  transform: rotate(35deg);
 }
 </style>
