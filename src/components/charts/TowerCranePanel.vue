@@ -117,9 +117,29 @@ const createGaugeOption = (
   };
 };
 
+const getCurrentKeys = () => {
+  const keys: string[] = [];
+  props.data.forEach(crane => {
+    keys.push(`${crane.id}-load`, `${crane.id}-wind`, `${crane.id}-angle`);
+  });
+  return keys;
+};
+
+const disposeUnusedGauges = () => {
+  const currentKeys = new Set(getCurrentKeys());
+  Object.keys(gaugeInstances.value).forEach(key => {
+    if (!currentKeys.has(key)) {
+      gaugeInstances.value[key]?.dispose();
+      delete gaugeInstances.value[key];
+    }
+  });
+};
+
 const initGauges = async () => {
   await nextTick();
   await nextTick();
+  
+  disposeUnusedGauges();
   
   props.data.forEach(crane => {
     const keys = [`${crane.id}-load`, `${crane.id}-wind`, `${crane.id}-angle`];
@@ -181,8 +201,18 @@ const updateGauges = () => {
   });
 };
 
-watch(() => props.data, () => {
-  if (isInitialized.value) {
+watch(() => props.data, async (newData, oldData) => {
+  if (!isInitialized.value) return;
+  
+  const oldIds = new Set((oldData || []).map(c => c.id));
+  const newIds = new Set(newData.map(c => c.id));
+  const idsChanged = oldIds.size !== newIds.size || 
+    [...oldIds].some(id => !newIds.has(id)) || 
+    [...newIds].some(id => !oldIds.has(id));
+  
+  if (idsChanged) {
+    await initGauges();
+  } else {
     updateGauges();
   }
 }, { deep: true });
