@@ -76,6 +76,36 @@ export interface EnvData {
 
 export type StatusType = 'normal' | 'warning' | 'danger';
 
+export interface ProjectInfo {
+  id: string;
+  name: string;
+  location: string;
+  totalArea: number;
+  startDate: string;
+  endDate: string;
+  progress: number;
+  status: StatusType;
+}
+
+export interface ProjectDataset {
+  info: ProjectInfo;
+  tasks: ProjectTask[];
+  personnel: PersonnelData;
+  towerCranes: TowerCraneData[];
+  env: EnvData;
+}
+
+export interface ProjectSummary {
+  info: ProjectInfo;
+  totalPersonnel: number;
+  totalTowerCranes: number;
+  activeDangerAlarms: number;
+  activeWarningAlarms: number;
+  envComplianceRate: number;
+  projectProgress: number;
+  overallStatus: StatusType;
+}
+
 export interface WarningDangerThreshold {
   warning: number;
   danger: number;

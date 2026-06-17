@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { onMounted, computed, ref } from 'vue';
-import { useMockData, useCurrentTime } from '@/composables/useMockData';
+import { onMounted, onUnmounted, computed, ref } from 'vue';
+import { useRouter } from 'vue-router';
+import { useProjects, useCurrentTime } from '@/composables/useProjects';
 import PanelTitle from '@/components/common/PanelTitle.vue';
 import GanttChart from '@/components/charts/GanttChart.vue';
 import PersonnelMap from '@/components/charts/PersonnelMap.vue';
@@ -8,10 +9,18 @@ import TowerCranePanel from '@/components/charts/TowerCranePanel.vue';
 import EnvMonitor from '@/components/charts/EnvMonitor.vue';
 import SettingsPanel from '@/components/common/SettingsPanel.vue';
 
-const { projectTasks, personnelData, towerCraneData, envData, startSimulation } = useMockData();
+const router = useRouter();
+const { projectList, currentProject, currentProjectId, switchProject, startSimulation } = useProjects();
 const { currentTime, currentDate, start: startTime } = useCurrentTime();
 
 const settingsVisible = ref(false);
+const projectDropdownOpen = ref(false);
+
+const projectTasks = computed(() => currentProject.value?.tasks || []);
+const personnelData = computed(() => currentProject.value?.personnel || { total: 0, teams: [], areas: [], trend: [] });
+const towerCraneData = computed(() => currentProject.value?.towerCranes || []);
+const envData = computed(() => currentProject.value?.env || { pm25: 0, pm10: 0, noise: 0, temperature: 0, humidity: 0, sprinklerOn: false, trend: [] });
+const projectInfo = computed(() => currentProject.value?.info);
 
 const alarmCount = computed(() => {
   return towerCraneData.value.reduce((sum, tc) => sum + tc.alarms.length, 0);
@@ -28,9 +37,35 @@ const warningCount = computed(() => {
 const openSettings = () => { settingsVisible.value = true; };
 const closeSettings = () => { settingsVisible.value = false; };
 
+const toggleDropdown = () => {
+  projectDropdownOpen.value = !projectDropdownOpen.value;
+};
+
+const selectProject = (id: string) => {
+  switchProject(id);
+  projectDropdownOpen.value = false;
+};
+
+const goToOverview = () => {
+  router.push('/overview');
+  projectDropdownOpen.value = false;
+};
+
+const handleClickOutside = (e: MouseEvent) => {
+  const target = e.target as HTMLElement;
+  if (!target.closest('.project-selector')) {
+    projectDropdownOpen.value = false;
+  }
+};
+
 onMounted(() => {
   startTime();
   startSimulation();
+  document.addEventListener('click', handleClickOutside);
+});
+
+onUnmounted(() => {
+  document.removeEventListener('click', handleClickOutside);
 });
 </script>
 
@@ -56,9 +91,51 @@ onMounted(() => {
             <path d="M14 17h1"></path>
           </svg>
         </div>
-        <div class="project-info">
-          <h1 class="project-name">智慧工地可视化管控平台</h1>
-          <p class="project-sub">XX项目 · 施工现场实时监控</p>
+        <div class="project-selector">
+          <div class="platform-title">智慧工地可视化管控平台</div>
+          <button class="project-switcher" @click.stop="toggleDropdown">
+            <span class="status-dot" :class="projectInfo?.status"></span>
+            <span class="project-name">{{ projectInfo?.name || '加载中...' }}</span>
+            <svg class="chevron" :class="{ open: projectDropdownOpen }" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </button>
+          <Transition name="dropdown">
+            <div v-if="projectDropdownOpen" class="project-dropdown">
+              <div class="dropdown-header">
+                <span>切换项目</span>
+              </div>
+              <div class="dropdown-list">
+                <div
+                  v-for="p in projectList"
+                  :key="p.id"
+                  class="dropdown-item"
+                  :class="{ active: p.id === currentProjectId }"
+                  @click.stop="selectProject(p.id)"
+                >
+                  <span class="item-status" :class="p.status"></span>
+                  <div class="item-info">
+                    <div class="item-name">{{ p.name }}</div>
+                    <div class="item-location">{{ p.location }} · 进度 {{ p.progress }}%</div>
+                  </div>
+                  <svg v-if="p.id === currentProjectId" class="check-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                  </svg>
+                </div>
+              </div>
+              <div class="dropdown-footer">
+                <button class="overview-btn" @click.stop="goToOverview">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="7" height="7"></rect>
+                    <rect x="14" y="3" width="7" height="7"></rect>
+                    <rect x="14" y="14" width="7" height="7"></rect>
+                    <rect x="3" y="14" width="7" height="7"></rect>
+                  </svg>
+                  <span>集团总览</span>
+                </button>
+              </div>
+            </div>
+          </Transition>
         </div>
       </div>
       
@@ -245,21 +322,185 @@ onMounted(() => {
   box-shadow: 0 0 20px rgba(0, 176, 255, 0.4);
 }
 
-.project-name {
-  font-size: 20px;
+.project-selector {
+  position: relative;
+}
+.platform-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: #78909C;
+  margin-bottom: 3px;
+  letter-spacing: 1px;
+}
+.project-switcher {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: rgba(0, 176, 255, 0.06);
+  border: 1px solid rgba(0, 176, 255, 0.2);
+  border-radius: 8px;
+  color: #ECEFF1;
+  font-size: 16px;
   font-weight: 700;
-  margin: 0;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.project-switcher:hover {
+  background: rgba(0, 176, 255, 0.12);
+  border-color: rgba(0, 176, 255, 0.4);
+  box-shadow: 0 0 12px rgba(0, 176, 255, 0.15);
+}
+.project-switcher .project-name {
   background: linear-gradient(90deg, #00B0FF, #00E676);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  letter-spacing: 2px;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+.project-switcher .status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #00E676;
+  box-shadow: 0 0 6px #00E676;
+  flex-shrink: 0;
+}
+.project-switcher .status-dot.warning {
+  background: #FFD600;
+  box-shadow: 0 0 6px #FFD600;
+}
+.project-switcher .status-dot.danger {
+  background: #FF1744;
+  box-shadow: 0 0 6px #FF1744;
+}
+.project-switcher .chevron {
+  color: #78909C;
+  transition: transform 0.2s ease;
+}
+.project-switcher .chevron.open {
+  transform: rotate(180deg);
+  color: #00B0FF;
 }
 
-.project-sub {
+.project-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  min-width: 280px;
+  background: linear-gradient(180deg, #0c1a30 0%, #0a1628 100%);
+  border: 1px solid rgba(0, 176, 255, 0.25);
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 20px rgba(0, 176, 255, 0.1);
+  z-index: 100;
+  overflow: hidden;
+}
+.dropdown-header {
+  padding: 10px 14px;
   font-size: 12px;
+  font-weight: 600;
   color: #78909C;
-  margin: 2px 0 0 0;
+  background: rgba(0, 176, 255, 0.05);
+  border-bottom: 1px solid rgba(0, 176, 255, 0.1);
+  letter-spacing: 1px;
+}
+.dropdown-list {
+  max-height: 280px;
+  overflow-y: auto;
+}
+.dropdown-list::-webkit-scrollbar {
+  width: 4px;
+}
+.dropdown-list::-webkit-scrollbar-thumb {
+  background: rgba(0, 176, 255, 0.2);
+  border-radius: 2px;
+}
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border-bottom: 1px solid rgba(0, 176, 255, 0.05);
+}
+.dropdown-item:last-child {
+  border-bottom: none;
+}
+.dropdown-item:hover {
+  background: rgba(0, 176, 255, 0.08);
+}
+.dropdown-item.active {
+  background: rgba(0, 176, 255, 0.12);
+}
+.dropdown-item .item-status {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #00E676;
+  flex-shrink: 0;
+}
+.dropdown-item .item-status.warning {
+  background: #FFD600;
+}
+.dropdown-item .item-status.danger {
+  background: #FF1744;
+  animation: blink 1.5s infinite;
+}
+.dropdown-item .item-info {
+  flex: 1;
+  min-width: 0;
+}
+.dropdown-item .item-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #ECEFF1;
+  margin-bottom: 2px;
+}
+.dropdown-item .item-location {
+  font-size: 11px;
+  color: #78909C;
+}
+.dropdown-item .check-icon {
+  color: #00E676;
+  flex-shrink: 0;
+}
+.dropdown-footer {
+  padding: 10px 14px;
+  background: rgba(0, 0, 0, 0.25);
+  border-top: 1px solid rgba(0, 176, 255, 0.1);
+}
+.overview-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 0;
+  background: linear-gradient(135deg, rgba(0, 176, 255, 0.15), rgba(0, 230, 118, 0.1));
+  border: 1px solid rgba(0, 176, 255, 0.3);
+  border-radius: 8px;
+  color: #00B0FF;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.overview-btn:hover {
+  background: linear-gradient(135deg, rgba(0, 176, 255, 0.25), rgba(0, 230, 118, 0.18));
+  box-shadow: 0 0 12px rgba(0, 176, 255, 0.2);
+}
+
+.dropdown-enter-active,
+.dropdown-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.dropdown-enter-from,
+.dropdown-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
 }
 
 .header-center {
